@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="my">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MediaFire Permanent Link</title>
+  <style>
+    body { font-family: sans-serif; max-width: 720px; margin: 30px auto; padding: 0 16px; background:#111; color:#eee; }
+    input { width: 100%; padding: 12px; font-size: 15px; box-sizing: border-box; border-radius:8px; border:1px solid #444; background:#1c1c1c; color:#eee; }
+    button { padding: 12px 20px; font-size: 15px; margin-top: 10px; cursor: pointer; border:0; border-radius:8px; background:#3b82f6; color:#fff; }
+    .link { background:#1c1c1c; padding:12px; border-radius:8px; margin-top:12px; border:1px solid #333; word-break:break-all; }
+    a { color:#60a5fa; }
+    video { width:100%; margin-top:16px; border-radius:8px; background:#000; }
+    .err { color:#f87171; }
+  </style>
+</head>
+<body>
+  <h2>🎬 MediaFire → Permanent .mp4 Link</h2>
+  <p>MediaFire link ထည့်ပါ — ဘယ်တော့မှ expire မဖြစ်တဲ့ .mp4 link ရပါမယ်။</p>
+
+  <input id="mf" type="text" placeholder="https://www.mediafire.com/file/..." />
+  <button onclick="add()">Link ထုတ်ရန်</button>
+
+  <div id="out"></div>
+
+  <script>
+    async function add() {
+      const mf = document.getElementById("mf").value.trim();
+      const out = document.getElementById("out");
+      if (!mf) { out.innerHTML = '<p class="err">link ထည့်ပါ</p>'; return; }
+      out.innerHTML = "⏳ ...";
+
+      try {
+        const r = await fetch("/add?url=" + encodeURIComponent(mf));
+        const j = await r.json();
+        if (j.error) { out.innerHTML = '<p class="err">' + j.error + '</p>'; return; }
+
+        out.innerHTML = `
+          <div class="link"><b>Permanent Link:</b><br>
+            <a href="${j.link}" target="_blank">${j.link}</a>
+          </div>
+          <video controls preload="metadata" src="${j.link}"></video>
+        `;
+      } catch (e) {
+        out.innerHTML = '<p class="err">Error: ' + e.message + '</p>';
+      }
+    }
+  </script>
+</body>
+</html>
