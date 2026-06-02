@@ -1,11 +1,17 @@
 // functions/v/[id].js
 // direct link ကို KV မှာ ၅ မိနစ် cache လုပ်ထားသည်
 // ★ browser မှာ play မဖြစ်ဘဲ ဖိုင်တန်းဒေါင်းအောင် attachment သုံးထားသည်
+// ★ custom filename support
 
 const CACHE_TTL = 300; // 5 မိနစ် (စက္ကန့်)
 
 export async function onRequest(context) {
   const { request, params, env } = context;
+
+  // GET / HEAD သာ ခွင့်ပြု
+  if (request.method !== "GET" && request.method !== "HEAD") {
+    return new Response("Method not allowed", { status: 405 });
+  }
 
   let id = params.id;
   if (id.includes(".")) id = id.substring(0, id.lastIndexOf("."));
@@ -15,6 +21,9 @@ export async function onRequest(context) {
   if (!mfUrl) {
     return new Response("ID ရှာမတွေ့ပါ", { status: 404 });
   }
+
+  // ★ user ပေးထားတဲ့ custom filename ရှာ (ရှိရင်)
+  const customName = await env.LINKS.get("name:" + id);
 
   // ★ cache အရင်စစ် — resolve လုပ်ထားတဲ့ direct link ရှိပြီးသားလား
   const cacheKey = "direct:" + id;
@@ -30,12 +39,11 @@ export async function onRequest(context) {
     if (!direct) {
       return new Response("Direct link ရှာမတွေ့ပါ", { status: 502 });
     }
-    // ရလာတဲ့ direct link ကို ၅ မိနစ် cache
     await env.LINKS.put(cacheKey, direct, { expirationTtl: CACHE_TTL });
   }
 
-  // ★ ဖိုင်နာမည် ထုတ်ယူ (download လုပ်တဲ့အခါ နာမည်မှန်ရစေဖို့)
-  const filename = extractFilename(mfUrl, direct);
+  // ★ ဖိုင်နာမည် — custom name ဦးစားပေး၊ မရှိရင် URL ကနေ ထုတ်ယူ
+  const filename = customName || extractFilename(mfUrl, direct);
 
   // Range request forward (seek/resume support)
   const fwdHeaders = new Headers();
@@ -78,13 +86,12 @@ export async function onRequest(context) {
   respHeaders.set("Access-Control-Allow-Origin", "*");
   respHeaders.set("Accept-Ranges", "bytes");
 
-  // ★★★ အဓိကပြောင်းချက် — play မဖြစ်ဘဲ ဖိုင်တန်းဒေါင်းအောင် ★★★
-  // Content-Type ကို generic binary အဖြစ်ပေးခြင်းဖြင့် browser က play မလုပ်တော့ပါ
+  // ★★★ play မဖြစ်ဘဲ ဖိုင်တန်းဒေါင်းအောင် ★★★
   respHeaders.set("Content-Type", "application/octet-stream");
-  // attachment → browser က save dialog ပြ / တန်းဒေါင်း
   respHeaders.set(
     "Content-Disposition",
-    `attachment; filename="${filename}"; filename*=UTF-8''${encodeURIComponent(filename)}`
+    `attachment; filename="${sanitizeAscii(filename)}"; ` +
+      `filename*=UTF-8''${encodeURIComponent(filename)}`
   );
 
   return new Response(upstream.body, {
@@ -94,26 +101,31 @@ export async function onRequest(context) {
 }
 
 // ───────────────────────────────────────────────
+// filename ထဲက အန္တရာယ်ရှိနိုင်တဲ့ character (quote, newline) တွေ ဖယ်
+function sanitizeAscii(name) {
+  // ASCII fallback အတွက် — quote နဲ့ control char ဖယ်
+  return name.replace(/["\\\r\n]/g, "_").replace(/[^\x20-\x7E]/g, "_");
+}
+
+// ───────────────────────────────────────────────
 // MediaFire URL သို့မဟုတ် direct URL ကနေ ဖိုင်နာမည် ဆွဲထုတ်
 function extractFilename(mfUrl, directUrl) {
   // MediaFire URL ပုံစံ: .../file/xxxx/FILENAME.mp4/file
   try {
     const parts = new URL(mfUrl).pathname.split("/").filter(Boolean);
-    // file/<key>/<filename>/file → filename က index 2 မှာ
     if (parts.length >= 3 && parts[0] === "file") {
       const name = decodeURIComponent(parts[2]);
       if (name.includes(".")) return name;
     }
   } catch (_) {}
 
-  // direct URL ရဲ့ နောက်ဆုံး segment ကနေ ကြိုးစားကြည့်
+  // direct URL ရဲ့ နောက်ဆုံး segment ကနေ ကြိုးစား
   try {
     const dParts = new URL(directUrl).pathname.split("/").filter(Boolean);
     const last = decodeURIComponent(dParts[dParts.length - 1] || "");
     if (last.includes(".")) return last;
   } catch (_) {}
 
-  // ဘာမှ မရရင် default
   return "download.mp4";
 }
 
@@ -129,22 +141,44 @@ async function resolveMediafire(mfUrl) {
   });
   const html = await res.text();
 
+  let link = null;
+
   let m = html.match(/id="downloadButton"[^>]*href="([^"]+)"/i);
-  if (m && m[1]) return m[1];
+  if (m && m[1]) link = m[1];
 
-  m = html.match(/href="(https?:\/\/download[^"]+)"/i);
-  if (m && m[1]) return m[1];
-
-  m = html.match(/data-scrambled-url="([^"]+)"/i);
-  if (m && m[1]) {
-    try {
-      const decoded = atob(m[1]);
-      if (decoded.startsWith("http")) return decoded;
-    } catch (_) {}
+  if (!link) {
+    m = html.match(/href="(https?:\/\/download[^"]+)"/i);
+    if (m && m[1]) link = m[1];
   }
 
-  m = html.match(/window\.location\.href\s*=\s*['"]([^'"]+)['"]/i);
-  if (m && m[1] && m[1].startsWith("http")) return m[1];
+  if (!link) {
+    m = html.match(/data-scrambled-url="([^"]+)"/i);
+    if (m && m[1]) {
+      try {
+        const decoded = atob(m[1]);
+        if (decoded.startsWith("http")) link = decoded;
+      } catch (_) {}
+    }
+  }
 
-  return null;
+  if (!link) {
+    m = html.match(/window\.location\.href\s*=\s*['"]([^'"]+)['"]/i);
+    if (m && m[1] && m[1].startsWith("http")) link = m[1];
+  }
+
+  // ★ HTML entity decode (&amp; → &)
+  if (link) link = decodeHtmlEntities(link);
+
+  return link;
+}
+
+// ───────────────────────────────────────────────
+function decodeHtmlEntities(str) {
+  return str
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&#x2F;/gi, "/");
 }
