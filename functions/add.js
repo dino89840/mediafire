@@ -1,6 +1,6 @@
 // functions/add.js
 // MediaFire link ပို့ → ID ထုတ်ပေး → permanent download link ပြန်ပေး
-// ★ custom filename support (name parameter)
+// ★ custom filename support — filename ကို URL path ထဲ တိုက်ရိုက်ထည့်
 
 export async function onRequest(context) {
   const { request, env } = context;
@@ -34,16 +34,26 @@ export async function onRequest(context) {
     await env.LINKS.put("name:" + id, finalName);
   }
 
-  // link extension — custom name ရှိရင် အဲ့ဒီ extension သုံး၊ မရှိရင် .mp4
-  let ext = "mp4";
-  if (finalName && finalName.includes(".")) {
-    ext = finalName.substring(finalName.lastIndexOf(".") + 1);
+  // ───────────────────────────────────────────────
+  // ★★★ link ဆောက်နည်း ပြောင်းထား ★★★
+  // download manager တွေက URL path ရဲ့ နောက်ဆုံးအပိုင်းကို filename အဖြစ်ယူတယ်။
+  // ဒါကြောင့် custom name ကို path ထဲ တိုက်ရိုက်ထည့်ပေးတယ်။
+  // ပုံစံ: /v/{id}/{filename}
+  let downloadLink;
+
+  if (finalName) {
+    // extension မပါရင် .mp4 ဖြည့်
+    let nameForUrl = finalName;
+    if (!nameForUrl.includes(".")) nameForUrl += ".mp4";
+    // URL-safe ဖြစ်အောင် encode (space, မြန်မာစာ စသဖြင့်)
+    downloadLink = `${url.origin}/v/${id}/${encodeURIComponent(nameForUrl)}`;
+  } else {
+    // custom name မရှိ → ID ကိုပဲ filename အဖြစ်သုံး
+    downloadLink = `${url.origin}/v/${id}.mp4`;
   }
 
-  const playLink = `${url.origin}/v/${id}.${ext}`;
-
   return new Response(
-    JSON.stringify({ id, link: playLink, name: finalName || null }),
+    JSON.stringify({ id, link: downloadLink, name: finalName || null }),
     { headers: cors }
   );
 }
