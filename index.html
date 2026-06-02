@@ -53,25 +53,29 @@
         const j = await r.json();
         if (j.error) { out.innerHTML = '<p class="err">' + j.error + '</p>'; return; }
 
+        // ★ link ကို attribute ထဲ ဘေးကင်းအောင် escape
+        const safeLink = j.link.replace(/"/g, "&quot;");
+
         out.innerHTML = `
           <div class="link"><b>Permanent Download Link:</b><br>
-            <a id="result" href="${j.link}">${j.link}</a>
+            <a id="result" href="${safeLink}">${j.link}</a>
           </div>
-          <a class="dl-btn" href="${j.link}" download>⬇️ Download ဆွဲရန်</a>
-          <button class="copy-btn" onclick="copyLink('${j.link}')">📋 Copy</button>
+          <a class="dl-btn" href="${safeLink}" download>⬇️ Download ဆွဲရန်</a>
+          <button class="copy-btn" id="copyBtn">📋 Copy</button>
           ${j.name ? '<div class="hint">ဖိုင်နာမည်: ' + j.name + '</div>' : ''}
         `;
+
+        // ★ copy button — onclick string ထဲ link ထည့်တာထက် ပိုလုံခြုံ
+        document.getElementById("copyBtn").addEventListener("click", function () {
+          navigator.clipboard.writeText(j.link).then(() => {
+            alert("Link copy လုပ်ပြီးပါပြီ ✓");
+          });
+        });
       } catch (e) {
         out.innerHTML = '<p class="err">Error: ' + e.message + '</p>';
       } finally {
         btn.disabled = false;
       }
-    }
-
-    function copyLink(link) {
-      navigator.clipboard.writeText(link).then(() => {
-        alert("Link copy လုပ်ပြီးပါပြီ ✓");
-      });
     }
   </script>
 </body>
