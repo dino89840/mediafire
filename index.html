@@ -10,13 +10,13 @@
     button { padding: 12px 20px; font-size: 15px; margin-top: 10px; cursor: pointer; border:0; border-radius:8px; background:#3b82f6; color:#fff; }
     .link { background:#1c1c1c; padding:12px; border-radius:8px; margin-top:12px; border:1px solid #333; word-break:break-all; }
     a { color:#60a5fa; }
-    video { width:100%; margin-top:16px; border-radius:8px; background:#000; }
+    .dl-btn { display:inline-block; margin-top:12px; padding:12px 20px; background:#22c55e; color:#fff; border-radius:8px; text-decoration:none; }
     .err { color:#f87171; }
   </style>
 </head>
 <body>
-  <h2>🎬 MediaFire → Permanent .mp4 Link</h2>
-  <p>MediaFire link ထည့်ပါ — ဘယ်တော့မှ expire မဖြစ်တဲ့ .mp4 link ရပါမယ်။</p>
+  <h2>📥 MediaFire → Permanent Download Link</h2>
+  <p>MediaFire link ထည့်ပါ — link ကိုနှိပ်တာနဲ့ ဖိုင်တန်းဒေါင်းတဲ့ permanent link ရပါမယ်။</p>
 
   <input id="mf" type="text" placeholder="https://www.mediafire.com/file/..." />
   <button onclick="add()">Link ထုတ်ရန်</button>
@@ -36,10 +36,10 @@
         if (j.error) { out.innerHTML = '<p class="err">' + j.error + '</p>'; return; }
 
         out.innerHTML = `
-          <div class="link"><b>Permanent Link:</b><br>
-            <a href="${j.link}" target="_blank">${j.link}</a>
+          <div class="link"><b>Permanent Download Link:</b><br>
+            <a href="${j.link}">${j.link}</a>
           </div>
-          <video controls preload="metadata" src="${j.link}"></video>
+          <a class="dl-btn" href="${j.link}" download>⬇️ Download ဆွဲရန်</a>
         `;
       } catch (e) {
         out.innerHTML = '<p class="err">Error: ' + e.message + '</p>';
