@@ -1,5 +1,6 @@
 // functions/v/[id].js
 // direct link ကို KV မှာ ၅ မိနစ် cache လုပ်ထားသည်
+// ★ browser မှာ play မဖြစ်ဘဲ ဖိုင်တန်းဒေါင်းအောင် attachment သုံးထားသည်
 
 const CACHE_TTL = 300; // 5 မိနစ် (စက္ကန့်)
 
@@ -29,11 +30,14 @@ export async function onRequest(context) {
     if (!direct) {
       return new Response("Direct link ရှာမတွေ့ပါ", { status: 502 });
     }
-    // ရလာတဲ့ direct link ကို ၅ မိနစ် cache (link string ပဲမို့ byte အနည်းငယ်)
+    // ရလာတဲ့ direct link ကို ၅ မိနစ် cache
     await env.LINKS.put(cacheKey, direct, { expirationTtl: CACHE_TTL });
   }
 
-  // Range request forward (seek support)
+  // ★ ဖိုင်နာမည် ထုတ်ယူ (download လုပ်တဲ့အခါ နာမည်မှန်ရစေဖို့)
+  const filename = extractFilename(mfUrl, direct);
+
+  // Range request forward (seek/resume support)
   const fwdHeaders = new Headers();
   const range = request.headers.get("Range");
   if (range) fwdHeaders.set("Range", range);
@@ -49,7 +53,7 @@ export async function onRequest(context) {
     redirect: "follow",
   });
 
-  // ★ cache ထဲက link expire ဖြစ်နေရင် (403/410) → ပြန် resolve ပြီး တစ်ခါ ထပ်ကြိုး
+  // ★ cache ထဲက link expire ဖြစ်နေရင် (403/410/404) → ပြန် resolve ပြီး ထပ်ကြိုး
   if (upstream.status === 403 || upstream.status === 410 || upstream.status === 404) {
     const fresh = await resolveMediafire(mfUrl);
     if (fresh) {
@@ -65,7 +69,7 @@ export async function onRequest(context) {
 
   const respHeaders = new Headers();
   for (const h of [
-    "content-type", "content-length", "content-range",
+    "content-length", "content-range",
     "accept-ranges", "last-modified", "etag",
   ]) {
     const v = upstream.headers.get(h);
@@ -73,8 +77,15 @@ export async function onRequest(context) {
   }
   respHeaders.set("Access-Control-Allow-Origin", "*");
   respHeaders.set("Accept-Ranges", "bytes");
-  if (!respHeaders.has("content-type")) respHeaders.set("content-type", "video/mp4");
-  respHeaders.set("Content-Disposition", "inline");
+
+  // ★★★ အဓိကပြောင်းချက် — play မဖြစ်ဘဲ ဖိုင်တန်းဒေါင်းအောင် ★★★
+  // Content-Type ကို generic binary အဖြစ်ပေးခြင်းဖြင့် browser က play မလုပ်တော့ပါ
+  respHeaders.set("Content-Type", "application/octet-stream");
+  // attachment → browser က save dialog ပြ / တန်းဒေါင်း
+  respHeaders.set(
+    "Content-Disposition",
+    `attachment; filename="${filename}"; filename*=UTF-8''${encodeURIComponent(filename)}`
+  );
 
   return new Response(upstream.body, {
     status: upstream.status,
@@ -82,6 +93,31 @@ export async function onRequest(context) {
   });
 }
 
+// ───────────────────────────────────────────────
+// MediaFire URL သို့မဟုတ် direct URL ကနေ ဖိုင်နာမည် ဆွဲထုတ်
+function extractFilename(mfUrl, directUrl) {
+  // MediaFire URL ပုံစံ: .../file/xxxx/FILENAME.mp4/file
+  try {
+    const parts = new URL(mfUrl).pathname.split("/").filter(Boolean);
+    // file/<key>/<filename>/file → filename က index 2 မှာ
+    if (parts.length >= 3 && parts[0] === "file") {
+      const name = decodeURIComponent(parts[2]);
+      if (name.includes(".")) return name;
+    }
+  } catch (_) {}
+
+  // direct URL ရဲ့ နောက်ဆုံး segment ကနေ ကြိုးစားကြည့်
+  try {
+    const dParts = new URL(directUrl).pathname.split("/").filter(Boolean);
+    const last = decodeURIComponent(dParts[dParts.length - 1] || "");
+    if (last.includes(".")) return last;
+  } catch (_) {}
+
+  // ဘာမှ မရရင် default
+  return "download.mp4";
+}
+
+// ───────────────────────────────────────────────
 async function resolveMediafire(mfUrl) {
   const res = await fetch(mfUrl, {
     headers: {
