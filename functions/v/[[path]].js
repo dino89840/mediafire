@@ -1,7 +1,8 @@
-// functions/v/[id].js
+// functions/v/[[path]].js
+// ★ catch-all route — /v/{id}.mp4 ရော /v/{id}/{filename} ရော နှစ်မျိုးလုံး ဖမ်းနိုင်
 // direct link ကို KV မှာ ၅ မိနစ် cache လုပ်ထားသည်
 // ★ browser မှာ play မဖြစ်ဘဲ ဖိုင်တန်းဒေါင်းအောင် attachment သုံးထားသည်
-// ★ custom filename support
+// ★ custom filename support (URL path ထဲကရော KV ကရော)
 
 const CACHE_TTL = 300; // 5 မိနစ် (စက္ကန့်)
 
@@ -13,8 +14,27 @@ export async function onRequest(context) {
     return new Response("Method not allowed", { status: 405 });
   }
 
-  let id = params.id;
+  // ───────────────────────────────────────────────
+  // ★ path ကို ပိုင်းခြား
+  // params.path က array ဖြစ်နိုင် (catch-all) ဒါမှမဟုတ် string
+  // ဖြစ်နိုင်တဲ့ပုံစံ:
+  //   ["a9539b49.mp4"]              → /v/a9539b49.mp4
+  //   ["a9539b49", "myvideo.mp4"]   → /v/a9539b49/myvideo.mp4
+  let segments = params.path;
+  if (typeof segments === "string") segments = [segments];
+  if (!Array.isArray(segments) || segments.length === 0) {
+    return new Response("Invalid path", { status: 400 });
+  }
+
+  // ★ ID = ပထမ segment (extension ဖယ်)
+  let id = segments[0];
   if (id.includes(".")) id = id.substring(0, id.lastIndexOf("."));
+
+  // ★ URL path ထဲက filename (ဒုတိယ segment ရှိရင် အဲ့ဒါ filename)
+  let urlFilename = "";
+  if (segments.length >= 2) {
+    urlFilename = decodeURIComponent(segments[segments.length - 1]);
+  }
 
   // MediaFire link ရှာ
   const mfUrl = await env.LINKS.get(id);
@@ -22,7 +42,7 @@ export async function onRequest(context) {
     return new Response("ID ရှာမတွေ့ပါ", { status: 404 });
   }
 
-  // ★ user ပေးထားတဲ့ custom filename ရှာ (ရှိရင်)
+  // ★ user ပေးထားတဲ့ custom filename ရှာ (KV)
   const customName = await env.LINKS.get("name:" + id);
 
   // ★ cache အရင်စစ် — resolve လုပ်ထားတဲ့ direct link ရှိပြီးသားလား
@@ -42,8 +62,13 @@ export async function onRequest(context) {
     await env.LINKS.put(cacheKey, direct, { expirationTtl: CACHE_TTL });
   }
 
-  // ★ ဖိုင်နာမည် — custom name ဦးစားပေး၊ မရှိရင် URL ကနေ ထုတ်ယူ
-  const filename = customName || extractFilename(mfUrl, direct);
+  // ───────────────────────────────────────────────
+  // ★ ဖိုင်နာမည် ဆုံးဖြတ်ခြင်း (priority order):
+  //   1) URL path ထဲက filename (download manager က ဒါကို ယူတယ်)
+  //   2) KV ထဲက custom name
+  //   3) MediaFire URL ကနေ ထုတ်ယူ
+  const filename =
+    urlFilename || customName || extractFilename(mfUrl, direct);
 
   // Range request forward (seek/resume support)
   const fwdHeaders = new Headers();
@@ -103,7 +128,6 @@ export async function onRequest(context) {
 // ───────────────────────────────────────────────
 // filename ထဲက အန္တရာယ်ရှိနိုင်တဲ့ character (quote, newline) တွေ ဖယ်
 function sanitizeAscii(name) {
-  // ASCII fallback အတွက် — quote နဲ့ control char ဖယ်
   return name.replace(/["\\\r\n]/g, "_").replace(/[^\x20-\x7E]/g, "_");
 }
 
